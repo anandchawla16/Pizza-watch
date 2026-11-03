@@ -121,6 +121,11 @@ def _google_one(page, v):
         "[aria-label]", "els => els.map(e => e.getAttribute('aria-label'))")
     labels = [l for l in labels if l and "busy" in l]
     blob = "\n".join(labels)
+    title = page.locator("h1").first.inner_text(timeout=3000)
+    hours = page.locator("[data-item-id='oh'], [aria-label*='Hours'], [aria-label*='hours']").first
+    hrs = hours.get_attribute("aria-label") if hours.count() else ""
+    v["_debug"] = {"matched": title, "busy_labels": len(labels), "hours": (hrs or "")[:120],
+                   "sample": labels[:2], "url": page.url[:160]}
     m = LIVE_RE.search(blob)
     if m:
         return int(m[1]), int(m[2])
@@ -198,7 +203,7 @@ def poll_once():
                 print(f"{v['name']}: {e}")
                 live, usual = None, 0
         rows.append({"id": v["id"], "name": v["name"], "inverse": v.get("inverse", False),
-                     "live": live, "usual": usual})
+                     "live": live, "usual": usual, "debug": v.pop("_debug", None)})
     idx = pizza_index(rows)
     now = dt.datetime.now(dt.timezone.utc).isoformat()
 
