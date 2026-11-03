@@ -289,13 +289,17 @@ function checkAlerts(rows,idx){
 /* ---- loop ---- */
 async function tick(){
   if(st.paused)return;
+  if(st.waiting){ // hosted site before the first scan lands: keep checking, never show demo data
+    try{FEED="feed.json";const r=await liveRows();if(r&&r.length){st.waiting=false;st.live=true;goLive()}else return}catch(e){return}
+  }
   let rows;
   try{rows=st.live?await liveRows():demoRows()}catch(e){if(st.live){$("srcTxt").textContent="Collector offline";return}}
   const idx=computeIndex(rows);if(st.live&&st.feedHist){st.hist=st.feedHist.slice(-90)}else{st.hist.push(idx);if(st.hist.length>90)st.hist.shift()}
   st.peak=Math.max(st.peak,idx);$("peak").textContent="peak "+st.peak;
   render(rows,idx);checkAlerts(rows,idx);
 }
-let timer;function schedule(){clearInterval(timer);timer=setInterval(tick,st.live?30000:2000/st.spd)}
+function goLive(){$("inject").hidden=true;$("spd").closest("label").hidden=true;$("foot").textContent="Live mode: Google Maps is checked every 15 minutes; this page refreshes every 30 seconds."}
+let timer;function schedule(){clearInterval(timer);timer=setInterval(tick,(st.live||st.waiting)?30000:2000/st.spd)}
 
 /* ---- controls ---- */
 const bind=(id,k,fmt)=>{const el=$(id);el.addEventListener("input",()=>{st[k]=+el.value;$(id+"Out").textContent=fmt?fmt(el.value):el.value;if(k==="spd")schedule();drawChart()})};
@@ -313,7 +317,14 @@ buildBand();buildVenues();
   for(const f of ["api/feed","feed.json"]){
     try{FEED=f;const r=await liveRows();if(!r||!r.length)throw 0;st.live=true;break}catch(e){FEED=null}
   }
-  if(st.live){$("inject").hidden=true;$("spd").closest("label").hidden=true;$("foot").textContent="Live mode: Google Maps is checked every 15 minutes; this page refreshes every 30 seconds."}
+  if(st.live)goLive();
+  else if(location.hostname.endsWith("github.io")){
+    st.waiting=true;goLive();$("srcTxt").textContent="Scanning Google Maps…";
+    $("verdict").textContent="First scan in progress";$("idx").textContent="–";
+    $("log").innerHTML='<p class="empty">The first scan is running. Readings appear here in a few minutes; this page checks every 30 seconds.</p>';
+    VENUES.forEach(v=>{const el=$("v-"+v.id);el.querySelector(".live").textContent="…";el.querySelector(".usual").textContent="scanning"});
+    schedule();return;
+  }
   if(!st.live){for(let i=0;i<40;i++){const r=demoRows(),ix=computeIndex(r);st.hist.push(ix);r.forEach(v=>{st.vh[v.id].push(v.live)})}}
   tick();schedule();
 })();
