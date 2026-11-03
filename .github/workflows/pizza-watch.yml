@@ -23,11 +23,13 @@ jobs:
           pip install requests playwright
           python -m playwright install --with-deps chromium
       - name: Scan Google Maps
+        env:
+          DEBUG_SHOTS: "1"
         run: python collector.py --once
       - name: Save readings
         run: |
           git config user.name "pizza-watch-bot"
           git config user.email "pizza-watch-bot@users.noreply.github.com"
-          git add feed.json pizza_history.jsonl
+          git add feed.json pizza_history.jsonl debug || true
           git commit -m "scan $(date -u +%H:%M)" || exit 0
           git push

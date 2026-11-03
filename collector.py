@@ -130,6 +130,9 @@ def _google_one(page, v):
     labels = [l for l in labels if l and "busy" in l]
     blob = "\n".join(labels)
     title = page.locator("h1").last.inner_text(timeout=3000)
+    if os.environ.get("DEBUG_SHOTS"):
+        Path(HERE / "debug").mkdir(exist_ok=True)
+        page.screenshot(path=str(HERE / "debug" / f"{v['id']}.png"))
     hours = page.locator("[data-item-id='oh'], [aria-label*='Hours'], [aria-label*='hours']").first
     hrs = hours.get_attribute("aria-label") if hours.count() else ""
     v["_debug"] = {"matched": title, "busy_labels": len(labels), "hours": (hrs or "")[:120],
