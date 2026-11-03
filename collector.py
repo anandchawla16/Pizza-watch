@@ -106,28 +106,30 @@ def _google_one(page, v):
     page.goto(f"https://www.google.com/maps/search/?api=1&query={q}&hl=en",
               wait_until="domcontentloaded", timeout=45000)
     _dismiss_consent(page)
-    # A search can land on a results list instead of the place; open the first hit.
-    page.wait_for_timeout(3000)
-    on_list = "/maps/search/" in page.url or page.locator("h1").first.inner_text(timeout=8000).strip() == "Results"
-    if on_list:
+    # Maps either redirects straight to the place or shows a results list. Wait for one.
+    for _ in range(20):
+        if "/maps/place/" in page.url or page.locator("a.hfpxzc").count():
+            break
+        page.wait_for_timeout(500)
+    if "/maps/place/" not in page.url:
         first = page.locator("a.hfpxzc").first
         if not first.count():
             raise RuntimeError("place not found on Maps")
         first.click()
         page.wait_for_url("**/maps/place/**", timeout=15000)
-        page.wait_for_timeout(2500)
-    # Popular times sits lower in the side panel and renders lazily: scroll until it shows up.
-    page.mouse.move(200, 500)
-    for _ in range(10):
-        if page.locator("[aria-label*='busy at']").count():
+    page.wait_for_timeout(2500)
+    # Popular times sits lower in the place panel and renders lazily: scroll that panel.
+    for _ in range(12):
+        if page.locator("[aria-label*='busy at'], [aria-label*='Currently']").count():
             break
-        page.mouse.wheel(0, 900)
-        page.wait_for_timeout(900)
+        page.evaluate("""() => { const m=[...document.querySelectorAll('[role="main"]')].pop(); if(!m) return;
+            for (const e of [m, ...m.querySelectorAll('div')]) if (e.scrollHeight > e.clientHeight + 50) e.scrollBy(0, 800); }""")
+        page.wait_for_timeout(800)
     labels = page.eval_on_selector_all(
         "[aria-label]", "els => els.map(e => e.getAttribute('aria-label'))")
     labels = [l for l in labels if l and "busy" in l]
     blob = "\n".join(labels)
-    title = page.locator("h1").first.inner_text(timeout=3000)
+    title = page.locator("h1").last.inner_text(timeout=3000)
     hours = page.locator("[data-item-id='oh'], [aria-label*='Hours'], [aria-label*='hours']").first
     hrs = hours.get_attribute("aria-label") if hours.count() else ""
     v["_debug"] = {"matched": title, "busy_labels": len(labels), "hours": (hrs or "")[:120],
