@@ -1,0 +1,311 @@
+<title>Pentagon Pizza Watch</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a night-shift ops console — status band, then gauge + live chart, then venue grid and alert log side by side */
+:root{
+  --bg:#0e1320; --panel:#151c2b; --panel2:#1b2436; --line:#27324a;
+  --fg:#ece6d8; --muted:#8e97ab; --tomato:#ff5b39; --cheese:#ffb84a;
+  --ok:#59c49b; --crit:#ff3348;
+  --display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--body);font-size:14px;line-height:1.45;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 40px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font-family:var(--display);font-weight:800;font-size:clamp(30px,6vw,46px);letter-spacing:.02em;line-height:.95;margin:0;text-transform:uppercase;text-wrap:balance}
+h1 span{color:var(--tomato)}
+.sub{color:var(--muted);margin:4px 0 0;max-width:62ch}
+.clock{font-family:var(--mono);text-align:right;font-size:12px;color:var(--muted)}
+.clock b{display:block;font-size:22px;color:var(--fg);font-weight:600}
+.src{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 var(--ok);animation:pulse 1.6s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.paused .dot{animation:none;background:var(--muted)}
+
+.band{display:flex;gap:4px}
+.band div{flex:1;padding:8px 6px;text-align:center;font-family:var(--display);font-weight:800;font-size:15px;letter-spacing:.06em;background:var(--panel);color:var(--muted);border-top:3px solid var(--line);transition:all .4s}
+.band div small{display:block;font-family:var(--mono);font-weight:400;font-size:10px;letter-spacing:.04em;text-transform:uppercase}
+.band div.on{color:var(--bg)}
+.band div.on small{color:var(--bg)}
+
+.top{display:grid;grid-template-columns:minmax(0,280px) minmax(0,1fr);gap:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;min-width:0}
+.label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 10px;display:flex;justify-content:space-between;gap:8px}
+.gauge{display:flex;flex-direction:column;align-items:center;gap:6px}
+.gauge svg{width:100%;max-width:240px;height:auto}
+.idx{font-family:var(--display);font-weight:800;font-size:64px;line-height:1;font-variant-numeric:tabular-nums}
+.verdict{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;text-align:center}
+canvas{width:100%;height:220px;display:block}
+
+.grid2{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:16px}
+.venues{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.venue{background:var(--panel2);border-radius:5px;padding:12px;display:flex;flex-direction:column;gap:6px;border-left:3px solid var(--line);transition:border-color .3s,background .3s}
+.venue.spike{border-left-color:var(--crit);background:color-mix(in srgb,var(--crit) 12%,var(--panel2))}
+.venue.warm{border-left-color:var(--cheese)}
+.vname{font-weight:600;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.vname small{font-family:var(--mono);font-weight:400;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.vnums{display:flex;align-items:baseline;gap:10px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.vnums .live{font-size:24px;font-weight:600}
+.vnums .usual{color:var(--muted);font-size:12px}
+.delta{margin-left:auto;font-size:13px;font-weight:600}
+.bar{height:6px;background:var(--line);border-radius:3px;position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--cheese);border-radius:3px;transition:width .5s}
+.bar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--fg);opacity:.7}
+.spark{width:100%;height:30px}
+
+.log{display:flex;flex-direction:column;gap:6px;max-height:420px;overflow-y:auto;padding-right:4px}
+.alert{font-size:13px;padding:8px 10px;border-radius:4px;background:var(--panel2);border-left:3px solid var(--muted);animation:in .35s ease-out}
+.alert.crit{border-left-color:var(--crit)}
+.alert.warn{border-left-color:var(--cheese)}
+.alert.ok{border-left-color:var(--ok)}
+.alert time{font-family:var(--mono);font-size:11px;color:var(--muted);display:block}
+@keyframes in{from{transform:translateX(8px);opacity:.3}}
+.empty{color:var(--muted);font-size:13px}
+
+.controls{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center}
+.ctl{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.ctl output{font-family:var(--mono);color:var(--fg)}
+input[type=range]{accent-color:var(--tomato);width:150px}
+button{font:600 13px var(--body);color:var(--fg);background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:8px 12px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--cheese);outline-offset:2px}
+button.hot{background:var(--tomato);border-color:var(--tomato);color:#1a0d08}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--crit);color:#fff;padding:12px 18px;border-radius:5px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:calc(100% - 32px);z-index:5}
+.foot{color:var(--muted);font-size:12px;max-width:80ch}
+.foot code{font-family:var(--mono);font-size:11px;color:var(--fg)}
+@media (max-width:760px){.top,.grid2{grid-template-columns:minmax(0,1fr)}.band div{font-size:13px}.band div small{display:none}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap" id="app">
+  <header>
+    <div>
+      <h1>Pentagon <span>Pizza</span> Watch</h1>
+      <p class="sub">Live busyness at pizza places around the Pentagon, compared with what's normal for this hour. When several spike at once, the index climbs.</p>
+    </div>
+    <div class="clock"><span class="src" id="src"><i class="dot"></i><span id="srcTxt">Demo feed</span></span><b id="clock">--:--</b>Arlington, VA (ET)</div>
+  </header>
+
+  <div class="band" id="band"></div>
+
+  <div class="top">
+    <section class="panel gauge">
+      <p class="label" style="align-self:stretch"><span>Pizza index</span><span id="lvlTxt">DOUGHCON 5</span></p>
+      <svg viewBox="0 0 220 130" aria-hidden="true">
+        <path d="M20 115 A90 90 0 0 1 200 115" fill="none" stroke="var(--line)" stroke-width="16" stroke-linecap="round"/>
+        <path id="arc" d="M20 115 A90 90 0 0 1 200 115" fill="none" stroke="var(--cheese)" stroke-width="16" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
+        <line id="thrTick" x1="110" y1="18" x2="110" y2="38" stroke="var(--fg)" stroke-width="2"/>
+      </svg>
+      <div class="idx" id="idx">0</div>
+      <div class="verdict" id="verdict">Nominal</div>
+    </section>
+    <section class="panel">
+      <p class="label"><span>Index, last 90 readings</span><span id="peak">peak 0</span></p>
+      <canvas id="chart" aria-label="Pizza index over time"></canvas>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="controls">
+      <button id="pause">Pause</button>
+      <button id="inject" class="hot">Simulate a crisis night</button>
+      <button id="sound">Turn on alert sound</button>
+      <label class="ctl" for="thr">Alert when index ≥ <output id="thrOut">55</output><input type="range" id="thr" min="20" max="90" value="55"></label>
+      <label class="ctl" for="dlt">Venue spike = live − usual ≥ <output id="dltOut">30</output> pts<input type="range" id="dlt" min="10" max="60" value="30"></label>
+      <label class="ctl" for="spd">Demo speed <output id="spdOut">1×</output><input type="range" id="spd" min="1" max="5" value="1"></label>
+    </div>
+  </section>
+
+  <div class="grid2">
+    <section class="panel">
+      <p class="label"><span>Watchlist</span><span>live % · usual for this hour</span></p>
+      <div class="venues" id="venues"></div>
+    </section>
+    <section class="panel">
+      <p class="label"><span>Alerts</span><button id="clear" style="padding:2px 8px;font-size:11px">Clear</button></p>
+      <div class="log" id="log"><p class="empty">No alerts yet. Quiet nights are the normal state.</p></div>
+    </section>
+  </div>
+
+  <p class="foot" id="foot">This page is running on a simulated feed so you can see it work. Run <code>collector.py</code> (it reads Google Maps' Popular times, no key needed) and open <code>http://localhost:8787</code> to see the same dashboard on real live-busyness data, with Telegram alerts. Freddie's is a counter-signal: a bar that goes unusually quiet when people are stuck at work.</p>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(()=>{
+const VENUES=[
+ {id:"dominos",name:"Domino's Pizza",area:"Pentagon City"},
+ {id:"papajohns",name:"Papa John's",area:"Pentagon City"},
+ {id:"extreme",name:"Extreme Pizza",area:"Crystal City"},
+ {id:"wethepizza",name:"We, The Pizza",area:"Crystal City"},
+ {id:"district",name:"District Pizza Palace",area:"Arlington"},
+ {id:"freddies",name:"Freddie's Beach Bar",area:"Crystal City",inverse:true}
+];
+const LEVELS=[
+ {n:5,min:0,name:"Quiet",c:"var(--ok)"},
+ {n:4,min:20,name:"Watch",c:"#8fc46a"},
+ {n:3,min:40,name:"Elevated",c:"var(--cheese)"},
+ {n:2,min:60,name:"High",c:"var(--tomato)"},
+ {n:1,min:80,name:"Max",c:"var(--crit)"}
+];
+const $=id=>document.getElementById(id);
+const st={hist:[],paused:false,thr:55,dlt:30,spd:1,sound:false,crisis:0,lastLevel:5,cool:{},above:false,peak:0,audio:null,live:false,vh:{}};
+VENUES.forEach(v=>st.vh[v.id]=[]);
+
+/* ---- shared scoring (mirrored in collector.py) ---- */
+function scoreVenue(live,usual){const base=Math.max(usual,15);return Math.max(0,Math.min(2,(live-usual)/base))*50}
+function computeIndex(rows){
+  const pizza=rows.filter(r=>!r.inverse&&r.live!=null);
+  if(!pizza.length)return 0;
+  const sc=pizza.map(r=>scoreVenue(r.live,r.usual)).sort((a,b)=>b-a);
+  const top=sc.slice(0,3);let idx=top.reduce((a,b)=>a+b,0)/top.length;
+  const spiking=pizza.filter(r=>r.live-r.usual>=st.dlt).length;
+  idx*=1+0.15*Math.max(0,spiking-1);
+  const bar=rows.find(r=>r.inverse&&r.live!=null);
+  if(bar&&bar.usual>=25&&bar.live<bar.usual*0.6)idx+=10;
+  return Math.round(Math.min(100,idx));
+}
+const levelOf=i=>[...LEVELS].reverse().find(l=>i>=l.min);
+
+/* ---- demo feed ---- */
+function etNow(){return new Date(new Date().toLocaleString("en-US",{timeZone:"America/New_York"}))}
+function usualAt(v,h){ // plausible weekly-curve shape per venue
+  if(v.inverse)return h>=21||h<1?70:h>=17?45:h>=12?20:5;
+  const lunch=Math.exp(-((h-12.5)**2)/3)*55, dinner=Math.exp(-((h-18.5)**2)/4)*70;
+  const open=(h>=10||h<1)?1:0.05;return Math.round((lunch+dinner+8)*open*(v.id==="dominos"?1.05:v.id==="district"?.8:1));
+}
+let demoT=0;
+function demoRows(){
+  demoT++;const h=etNow().getHours()+etNow().getMinutes()/60;
+  if(st.crisis<=0&&Math.random()<0.004)st.crisis=18+Math.random()*12; // rare organic spike
+  const c=st.crisis>0?Math.sin(Math.PI*Math.min(1,(30-st.crisis)/30))||0.6:0;
+  if(st.crisis>0)st.crisis--;
+  return VENUES.map((v,i)=>{
+    const usual=usualAt(v,h);
+    let live=usual+Math.sin(demoT/7+i*1.3)*6+(Math.random()-.5)*10;
+    if(c>0)live+=v.inverse?-usual*0.6*c:(35+i*7)*c*(Math.random()*.4+.8);
+    return{...v,usual,live:Math.round(Math.max(0,Math.min(100,live)))};
+  });
+}
+
+/* ---- live feed when served by collector.py ---- */
+let FEED=null;
+async function liveRows(){
+  const r=await fetch(FEED+"?t="+Date.now(),{cache:"no-store"});if(!r.ok)throw new Error(r.status);
+  const d=await r.json();
+  if(d.history&&d.history.length)st.feedHist=d.history;
+  if(d.updated){const m=Math.round((Date.now()-new Date(d.updated))/60000);$("srcTxt").textContent=st.paused?"Paused":`Live · updated ${m<1?"just now":m+" min ago"}`}
+  return d.venues;
+}
+
+/* ---- rendering ---- */
+function buildBand(){$("band").innerHTML=LEVELS.map(l=>`<div data-n="${l.n}" data-c="${l.c}">DOUGHCON ${l.n}<small>${l.name}</small></div>`).join("")}
+function buildVenues(){
+  $("venues").innerHTML=VENUES.map(v=>`<div class="venue" id="v-${v.id}">
+   <div class="vname">${v.name}<small>${v.inverse?"counter-signal":v.area}</small></div>
+   <div class="vnums"><span class="live">--</span><span class="usual">usual --</span><span class="delta">--</span></div>
+   <div class="bar"><i></i><u></u></div>
+   <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><path fill="color-mix(in srgb,var(--cheese) 18%,transparent)"></path><polyline fill="none" stroke="var(--cheese)" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline></svg>
+  </div>`).join("");
+}
+function sparkPts(a){if(a.length<2)return"";return a.map((y,i)=>`${(i/(a.length-1)*100).toFixed(1)},${(29-y*.28).toFixed(1)}`).join(" ")}
+function render(rows,idx){
+  const lv=levelOf(idx);
+  $("idx").textContent=idx;$("idx").style.color=lv.c;
+  $("arc").setAttribute("stroke-dasharray",`${idx} 100`);$("arc").setAttribute("stroke",lv.c);
+  $("lvlTxt").textContent="DOUGHCON "+lv.n;
+  const spk=rows.filter(r=>!r.inverse&&r.live-r.usual>=st.dlt).length;
+  $("verdict").textContent=spk?`${lv.name} · ${spk} venue${spk>1?"s":""} spiking`:lv.name+" · all near normal";
+  document.querySelectorAll("#band div").forEach(d=>{const on=+d.dataset.n>=lv.n;d.classList.toggle("on",+d.dataset.n===lv.n);d.style.background=+d.dataset.n===lv.n?d.dataset.c:"";d.style.borderTopColor=on?d.dataset.c:""});
+  rows.forEach(r=>{
+    const el=$("v-"+r.id);if(!el)return;const h=st.vh[r.id];h.push(r.live??0);if(h.length>40)h.shift();
+    const d=r.live==null?null:r.live-r.usual;
+    el.querySelector(".live").textContent=r.live==null?"n/a":r.live+"%";
+    el.querySelector(".usual").textContent="usual "+r.usual+"%";
+    const de=el.querySelector(".delta");de.textContent=d==null?"":(d>0?"+":"")+d;
+    const bad=r.inverse?(r.usual>=25&&r.live<r.usual*.6):d>=st.dlt;
+    de.style.color=bad?"var(--crit)":d>10&&!r.inverse?"var(--cheese)":"var(--muted)";
+    el.classList.toggle("spike",bad);el.classList.toggle("warm",!bad&&!r.inverse&&d>=st.dlt/2);
+    el.querySelector(".bar i").style.width=(r.live||0)+"%";el.querySelector(".bar u").style.left=r.usual+"%";
+    const p=sparkPts(h);el.querySelector("polyline").setAttribute("points",p);
+    el.querySelector("path").setAttribute("d",p?`M0,30 L${p.replace(/ /g," L")} L100,30 Z`:"");
+  });
+  drawChart();
+}
+function drawChart(){
+  const cv=$("chart"),dpr=devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;
+  if(cv.width!==w*dpr){cv.width=w*dpr;cv.height=h*dpr}
+  const x=cv.getContext("2d");x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,w,h);
+  const cs=getComputedStyle(document.documentElement),col=n=>cs.getPropertyValue(n).trim();
+  const L=28,B=h-18,T=8,R=w-6,Y=v=>B-(v/100)*(B-T);
+  x.font="10px "+col("--mono");x.fillStyle=col("--muted");x.strokeStyle=col("--line");x.lineWidth=1;
+  [0,25,50,75,100].forEach(v=>{x.beginPath();x.moveTo(L,Y(v));x.lineTo(R,Y(v));x.stroke();x.fillText(v,4,Y(v)+3)});
+  x.setLineDash([4,4]);x.strokeStyle=col("--crit");x.beginPath();x.moveTo(L,Y(st.thr));x.lineTo(R,Y(st.thr));x.stroke();x.setLineDash([]);
+  x.fillStyle=col("--crit");x.fillText("alert "+st.thr,R-50,Y(st.thr)-4);
+  const a=st.hist,n=90;if(a.length<2)return;
+  const X=i=>L+(i+(n-a.length))/(n-1)*(R-L);
+  const g=x.createLinearGradient(0,T,0,B);g.addColorStop(0,"rgba(255,91,57,.45)");g.addColorStop(1,"rgba(255,184,74,.02)");
+  x.beginPath();a.forEach((v,i)=>i?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v)));x.lineTo(X(a.length-1),B);x.lineTo(X(0),B);x.fillStyle=g;x.fill();
+  x.beginPath();a.forEach((v,i)=>i?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v)));x.strokeStyle=col("--cheese");x.lineWidth=2;x.stroke();
+  const lx=X(a.length-1),ly=Y(a[a.length-1]);x.beginPath();x.arc(lx,ly,4,0,7);x.fillStyle=col("--fg");x.fill();
+}
+
+/* ---- alerts ---- */
+function stamp(){return etNow().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit"})+" ET"}
+function addAlert(kind,msg,toast){
+  const log=$("log");log.querySelector(".empty")?.remove();
+  const d=document.createElement("div");d.className="alert "+kind;d.innerHTML=`<time>${stamp()}</time>${msg}`;log.prepend(d);
+  while(log.children.length>60)log.lastChild.remove();
+  if(toast){const t=$("toast");t.textContent=msg.replace(/<[^>]+>/g,"");t.hidden=false;clearTimeout(t._h);t._h=setTimeout(()=>t.hidden=true,4000);beep()}
+}
+function beep(){if(!st.sound||!st.audio)return;const a=st.audio,o=a.createOscillator(),g=a.createGain();o.type="square";o.frequency.value=880;g.gain.setValueAtTime(.08,a.currentTime);g.gain.exponentialRampToValueAtTime(.001,a.currentTime+.5);o.connect(g).connect(a.destination);o.start();o.stop(a.currentTime+.5)}
+function checkAlerts(rows,idx){
+  rows.forEach(r=>{
+    if(r.live==null)return;st.cool[r.id]=Math.max(0,(st.cool[r.id]||0)-1);
+    const hit=r.inverse?(r.usual>=25&&r.live<r.usual*.6):r.live-r.usual>=st.dlt;
+    if(hit&&!st.cool[r.id]){st.cool[r.id]=15;
+      addAlert(r.inverse?"warn":"warn",r.inverse?`<b>${r.name}</b> is unusually quiet: ${r.live}% vs ${r.usual}% usual`:`<b>${r.name}</b> spiking: ${r.live}% vs ${r.usual}% usual (+${r.live-r.usual})`)}
+  });
+  const lv=levelOf(idx).n;
+  if(idx>=st.thr&&!st.above){st.above=true;addAlert("crit",`<b>Pizza index ${idx}</b> crossed your alert line (${st.thr}). DOUGHCON ${lv}.`,true)}
+  else if(idx<st.thr-8&&st.above){st.above=false;addAlert("ok",`Index back down to ${idx}. Standing down.`)}
+  st.lastLevel=lv;
+}
+
+/* ---- loop ---- */
+async function tick(){
+  if(st.paused)return;
+  let rows;
+  try{rows=st.live?await liveRows():demoRows()}catch(e){if(st.live){$("srcTxt").textContent="Collector offline";return}}
+  const idx=computeIndex(rows);if(st.live&&st.feedHist){st.hist=st.feedHist.slice(-90)}else{st.hist.push(idx);if(st.hist.length>90)st.hist.shift()}
+  st.peak=Math.max(st.peak,idx);$("peak").textContent="peak "+st.peak;
+  render(rows,idx);checkAlerts(rows,idx);
+}
+let timer;function schedule(){clearInterval(timer);timer=setInterval(tick,st.live?30000:2000/st.spd)}
+
+/* ---- controls ---- */
+const bind=(id,k,fmt)=>{const el=$(id);el.addEventListener("input",()=>{st[k]=+el.value;$(id+"Out").textContent=fmt?fmt(el.value):el.value;if(k==="spd")schedule();drawChart()})};
+bind("thr","thr");bind("dlt","dlt");bind("spd","spd",v=>v+"×");
+$("pause").onclick=()=>{st.paused=!st.paused;$("pause").textContent=st.paused?"Resume":"Pause";$("app").classList.toggle("paused",st.paused);$("srcTxt").textContent=st.paused?"Paused":(st.live?"Live · collector":"Demo feed")};
+$("inject").onclick=()=>{st.crisis=30;addAlert("warn","Simulated crisis night started. Watch the venues climb.")};
+$("sound").onclick=()=>{st.sound=!st.sound;try{st.audio=st.audio||new (window.AudioContext||window.webkitAudioContext)()}catch(e){}$("sound").textContent=st.sound?"Alert sound on":"Turn on alert sound";if(st.sound)beep()};
+$("clear").onclick=()=>{$("log").innerHTML='<p class="empty">Cleared.</p>'};
+setInterval(()=>{$("clock").textContent=etNow().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit"})},1000);
+addEventListener("resize",drawChart);
+
+/* ---- boot ---- */
+buildBand();buildVenues();
+(async()=>{
+  for(const f of ["api/feed","feed.json"]){
+    try{FEED=f;const r=await liveRows();if(!r||!r.length)throw 0;st.live=true;break}catch(e){FEED=null}
+  }
+  if(st.live){$("inject").hidden=true;$("spd").closest("label").hidden=true;$("foot").textContent="Live mode: Google Maps is checked every 15 minutes; this page refreshes every 30 seconds. Alerts go to your Telegram."}
+  if(!st.live){for(let i=0;i<40;i++){const r=demoRows(),ix=computeIndex(r);st.hist.push(ix);r.forEach(v=>{st.vh[v.id].push(v.live)})}}
+  tick();schedule();
+})();
+})();
+</script>
