@@ -131,7 +131,7 @@ button.hot{background:var(--tomato);border-color:var(--tomato);color:#1a0d08}
     </section>
   </div>
 
-  <p class="foot" id="foot">This page is running on a simulated feed so you can see it work. Run <code>collector.py</code> (it reads Google Maps' Popular times, no key needed) and open <code>http://localhost:8787</code> to see the same dashboard on real live-busyness data, with Telegram alerts. Freddie's is a counter-signal: a bar that goes unusually quiet when people are stuck at work.</p>
+  <p class="foot" id="foot">This page is running on a simulated feed so you can see it work. Run <code>collector.py</code> (it reads Google Maps' Popular times, no key needed) and open <code>http://localhost:8787</code> to see the same dashboard on real live-busyness data. Freddie's is a counter-signal: a bar that goes unusually quiet when people are stuck at work.</p>
 </div>
 <div class="toast" id="toast" hidden></div>
 
@@ -153,7 +153,7 @@ const LEVELS=[
  {n:1,min:80,name:"Max",c:"var(--crit)"}
 ];
 const $=id=>document.getElementById(id);
-const st={hist:[],paused:false,thr:55,dlt:30,spd:1,sound:false,crisis:0,lastLevel:5,cool:{},above:false,peak:0,audio:null,live:false,vh:{}};
+const st={hist:[],paused:false,thr:55,dlt:30,spd:1,sound:false,crisis:0,lastLevel:5,cool:{},seen:new Set(),above:false,peak:0,audio:null,live:false,vh:{}};
 VENUES.forEach(v=>st.vh[v.id]=[]);
 
 /* ---- shared scoring (mirrored in collector.py) ---- */
@@ -198,6 +198,11 @@ async function liveRows(){
   const r=await fetch(FEED+"?t="+Date.now(),{cache:"no-store"});if(!r.ok)throw new Error(r.status);
   const d=await r.json();
   if(d.history&&d.history.length)st.feedHist=d.history;
+  (d.alerts||[]).slice().reverse().forEach(a=>{if(st.seen.has(a.t))return;st.seen.add(a.t);
+    const log=$("log");log.querySelector(".empty")?.remove();const el=document.createElement("div");
+    el.className="alert "+(/Index/.test(a.msg)&&!/Standing/.test(a.msg)?"crit":/Standing/.test(a.msg)?"ok":"warn");
+    el.innerHTML=`<time>${new Date(a.t).toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})} ET</time>`;
+    el.append(a.msg);log.prepend(el)});
   if(d.updated){const m=Math.round((Date.now()-new Date(d.updated))/60000);$("srcTxt").textContent=st.paused?"Paused":`Live · updated ${m<1?"just now":m+" min ago"}`}
   return d.venues;
 }
@@ -303,7 +308,7 @@ buildBand();buildVenues();
   for(const f of ["api/feed","feed.json"]){
     try{FEED=f;const r=await liveRows();if(!r||!r.length)throw 0;st.live=true;break}catch(e){FEED=null}
   }
-  if(st.live){$("inject").hidden=true;$("spd").closest("label").hidden=true;$("foot").textContent="Live mode: Google Maps is checked every 15 minutes; this page refreshes every 30 seconds. Alerts go to your Telegram."}
+  if(st.live){$("inject").hidden=true;$("spd").closest("label").hidden=true;$("foot").textContent="Live mode: Google Maps is checked every 15 minutes; this page refreshes every 30 seconds."}
   if(!st.live){for(let i=0;i<40;i++){const r=demoRows(),ix=computeIndex(r);st.hist.push(ix);r.forEach(v=>{st.vh[v.id].push(v.live)})}}
   tick();schedule();
 })();

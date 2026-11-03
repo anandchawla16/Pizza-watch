@@ -3,7 +3,7 @@
 Pentagon Pizza Watch — live collector + alerting server.
 
 Polls live busyness for pizza places near the Pentagon, computes the Pizza
-Index, sends Telegram alerts on spikes, and serves the dashboard at
+Index, logs spike alerts to the feed, and serves the dashboard at
 http://localhost:8787 in live mode.
 
 Two data sources (pick with SOURCE=):
@@ -14,8 +14,6 @@ Two data sources (pick with SOURCE=):
 Setup (Google mode)
   pip install requests playwright
   python -m playwright install chromium
-  export TELEGRAM_TOKEN=123:abc             # optional, from @BotFather
-  export TELEGRAM_CHAT=123456789            # optional, your chat id
   python collector.py                        # put pizza_watch.html next to it
   # add HEADLESS=0 to watch the browser work
 
@@ -46,8 +44,6 @@ WATCHLIST = [
 SOURCE     = os.environ.get("SOURCE", "google").lower()
 HEADLESS   = os.environ.get("HEADLESS", "1") != "0"
 KEY        = os.environ.get("BESTTIME_KEY", "")
-TG_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
-TG_CHAT    = os.environ.get("TELEGRAM_CHAT", "")
 POLL_SEC   = int(os.environ.get("POLL_SEC", "900"))    # 15 min; live data is ~hourly
 INDEX_THR  = int(os.environ.get("INDEX_THR", "55"))
 DELTA_THR  = int(os.environ.get("DELTA_THR", "30"))
@@ -183,13 +179,10 @@ def pizza_index(rows):
 
 
 def notify(msg):
+    """Record an alert in the feed so the dashboard shows it."""
     print(f"[ALERT] {msg}")
-    if TG_TOKEN and TG_CHAT:
-        try:
-            requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
-                          json={"chat_id": TG_CHAT, "text": "🍕 " + msg}, timeout=15)
-        except Exception as e:
-            print("telegram failed:", e)
+    stamp = dt.datetime.now(dt.timezone.utc).isoformat()
+    state["alerts"] = ([{"t": stamp, "msg": msg}] + state.get("alerts", []))[:50]
 
 
 def poll_once():
