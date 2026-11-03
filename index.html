@@ -203,6 +203,7 @@ async function liveRows(){
   const r=await fetch(FEED+"?t="+Date.now(),{cache:"no-store"});if(!r.ok)throw new Error(r.status);
   const d=await r.json();
   if(d.history&&d.history.length)st.feedHist=d.history;
+  if(d.limited_view)$("foot").textContent="Google is showing a limited view, so most pizza places have no data. The signed-in session is missing or expired: see the README to refresh GOOGLE_STATE.";
   (d.alerts||[]).slice().reverse().forEach(a=>{if(st.seen.has(a.t))return;st.seen.add(a.t);
     const log=$("log");log.querySelector(".empty")?.remove();const el=document.createElement("div");
     el.className="alert "+(/Index/.test(a.msg)&&!/Standing/.test(a.msg)?"crit":/Standing/.test(a.msg)?"ok":"warn");

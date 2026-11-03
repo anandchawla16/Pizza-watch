@@ -23,6 +23,8 @@ jobs:
           pip install requests playwright
           python -m playwright install --with-deps chromium
       - name: Scan Google Maps
+        env:
+          GOOGLE_STATE: ${{ secrets.GOOGLE_STATE }}   # signed-in session (see README)
         run: python collector.py --once
       - name: Save readings
         run: |

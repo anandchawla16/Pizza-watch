@@ -135,7 +135,8 @@ def _google_one(page, v):
         page.screenshot(path=str(HERE / "debug" / f"{v['id']}.png"))
     hours = page.locator("[data-item-id='oh'], [aria-label*='Hours'], [aria-label*='hours']").first
     hrs = hours.get_attribute("aria-label") if hours.count() else ""
-    v["_debug"] = {"matched": title, "busy_labels": len(labels), "hours": (hrs or "")[:120],
+    limited = page.get_by_text("limited view of Google Maps").count() > 0
+    v["_debug"] = {"matched": title, "limited_view": limited, "busy_labels": len(labels), "hours": (hrs or "")[:120],
                    "sample": labels[:2], "url": page.url[:160]}
     m = LIVE_RE.search(blob)
     if m:
@@ -145,13 +146,43 @@ def _google_one(page, v):
     return (int(m[1]) if m else None), usual
 
 
+def load_google_session():
+    """Signed-in Google cookies from GOOGLE_STATE (GitHub secret) or google_state.json.
+    Accepts a Playwright storage_state, or a Cookie-Editor JSON export (a list)."""
+    raw = os.environ.get("GOOGLE_STATE", "").strip()
+    if not raw and (HERE / "google_state.json").exists():
+        raw = (HERE / "google_state.json").read_text()
+    if not raw:
+        return None
+    if not raw.lstrip().startswith(("{", "[")):
+        import base64
+        raw = base64.b64decode(raw).decode()
+    data = json.loads(raw)
+    if isinstance(data, dict):
+        return data
+    same = {"no_restriction": "None", "lax": "Lax", "strict": "Strict"}
+    cookies = []
+    for c in data:
+        ck = {"name": c["name"], "value": c["value"], "domain": c["domain"],
+              "path": c.get("path", "/"), "secure": c.get("secure", False),
+              "httpOnly": c.get("httpOnly", False),
+              "sameSite": same.get(str(c.get("sameSite", "lax")).lower(), "Lax")}
+        if c.get("expirationDate"):
+            ck["expires"] = int(c["expirationDate"])
+        cookies.append(ck)
+    return {"cookies": cookies, "origins": []}
+
+
 def google_fetch_all(watchlist):
     from playwright.sync_api import sync_playwright
     out = {}
+    session = load_google_session()
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=HEADLESS)
+        browser = p.chromium.launch(headless=HEADLESS,
+                                    args=["--disable-blink-features=AutomationControlled"])
         ctx = browser.new_context(locale="en-US", timezone_id="America/New_York",
-                                  user_agent=UA, viewport={"width": 1280, "height": 900})
+                                  user_agent=UA, viewport={"width": 1280, "height": 900},
+                                  storage_state=session)
         page = ctx.new_page()
         for v in watchlist:
             try:
@@ -236,6 +267,11 @@ def poll_once():
         state["above"] = False
         notify(f"Pizza Index back to {idx}. Standing down.")
 
+    dbg = [r.get("debug") or {} for r in rows]
+    state["limited_view"] = any(d.get("limited_view") for d in dbg)
+    if state["limited_view"]:
+        print("WARNING: Google served the limited view. Sign-in session missing or expired "
+              "(run: python collector.py --login, then update the GOOGLE_STATE secret).")
     state["history"] = (state.get("history", []) + [idx])[-96:]   # ~24h at 15-min runs
     state.update(venues=rows, index=idx, updated=now)
     FEED.write_text(json.dumps(state))
@@ -279,6 +315,26 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    if "--login" in sys.argv:           # one-time: you sign in, the session is saved
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            try:
+                b = p.chromium.launch(headless=False, channel="chrome",
+                                      args=["--disable-blink-features=AutomationControlled"])
+            except Exception:
+                b = p.chromium.launch(headless=False)
+            ctx = b.new_context(locale="en-US")
+            pg = ctx.new_page()
+            pg.goto("https://accounts.google.com/ServiceLogin?continue=https://www.google.com/maps")
+            input("Sign in to Google in the window that opened. When Maps loads signed in, press Enter here... ")
+            ctx.storage_state(path=str(HERE / "google_state.json"))
+            b.close()
+        import base64
+        enc = base64.b64encode((HERE / "google_state.json").read_bytes()).decode()
+        (HERE / "google_state.b64.txt").write_text(enc)
+        print("\nSaved google_state.json and google_state.b64.txt (both git-ignored).")
+        print("Paste the contents of google_state.b64.txt into a GitHub secret named GOOGLE_STATE.")
+        raise SystemExit(0)
     if "--once" in sys.argv:            # used by the GitHub Actions schedule
         poll_once()
         raise SystemExit(0)
