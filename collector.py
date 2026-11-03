@@ -107,16 +107,22 @@ def _google_one(page, v):
               wait_until="domcontentloaded", timeout=45000)
     _dismiss_consent(page)
     # A search can land on a results list instead of the place; open the first hit.
-    try:
-        page.wait_for_selector("h1", timeout=8000)
-    except Exception:
+    page.wait_for_timeout(3000)
+    on_list = "/maps/search/" in page.url or page.locator("h1").first.inner_text(timeout=8000).strip() == "Results"
+    if on_list:
         first = page.locator("a.hfpxzc").first
         if not first.count():
             raise RuntimeError("place not found on Maps")
         first.click()
-        page.wait_for_selector("h1", timeout=12000)
-    page.wait_for_timeout(2500)                     # let the Popular times panel render
-    page.mouse.wheel(0, 1500); page.wait_for_timeout(1500)
+        page.wait_for_url("**/maps/place/**", timeout=15000)
+        page.wait_for_timeout(2500)
+    # Popular times sits lower in the side panel and renders lazily: scroll until it shows up.
+    page.mouse.move(200, 500)
+    for _ in range(10):
+        if page.locator("[aria-label*='busy at']").count():
+            break
+        page.mouse.wheel(0, 900)
+        page.wait_for_timeout(900)
     labels = page.eval_on_selector_all(
         "[aria-label]", "els => els.map(e => e.getAttribute('aria-label'))")
     labels = [l for l in labels if l and "busy" in l]
